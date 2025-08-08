@@ -82,8 +82,10 @@ function searchArtworks(query = '', limit = 3) {
  */
 function decideCoupon(message = '') {
   const text = String(message || '').toLowerCase();
-  const mild = /(price|expensive|יקר|discount|coupon|הנחה)/i.test(text);
-  const strong = /(too expensive|budget|תקרת|גבול|competitor|מתחר|if.*price|אם.*מחיר)/i.test(text);
+  // detect mild price sensitivity in English
+  const mild = /(price|expensive|discount|coupon|deal|sale)/.test(text);
+  // detect strong price signals in English such as explicit budget or competitor references
+  const strong = /(too expensive|budget|limit|competitor|if.*price|if.*cost)/.test(text);
   if (strong) return { code: '10OFF', percent: 10 };
   if (mild) return { code: '5OFF', percent: 5 };
   return null;
@@ -116,28 +118,34 @@ function buildCheckoutUrl(slug, couponCode) {
  *
  * @param {Array<Object>} results   List of artwork records.
  * @param {Object|null} discount    Discount information returned by decideCoupon.
- * @returns {string}                 Human‑readable response in Hebrew.
+ * @returns {string}                 Human‑readable response in English.
  */
 function assembleReply(results, discount) {
   let reply = '';
+  // If no results, apologise in English
   if (!results.length) {
-    return 'מצטער/ת, לא מצאתי יצירות מתאימות כרגע.';
+    return "Sorry, I couldn't find suitable artworks at this time.";
   }
-  reply += 'הנה כמה יצירות מומלצות עבורך:\n';
+  // Introductory sentence in English
+  reply += 'Here are some recommended artworks for you:\n';
   results.forEach((art, idx) => {
     const price = Number(art.price || 0);
     let finalPrice = price;
+    // Apply discount if present
     if (discount) {
       finalPrice = Math.round(price * (100 - discount.percent)) / 100;
     }
-    const priceInfo = discount ? `${finalPrice} (במקום ${price})` : `${price}`;
+    // Price description: show final price and mention original price when a discount is applied
+    const priceInfo = discount ? `${finalPrice} (instead of ${price})` : `${price}`;
     const url = buildCheckoutUrl(art.slug, discount?.code);
-    reply += `${idx + 1}. "${art.title}" מאת ${art.artist}. מחיר: ${priceInfo} דולר. לקנייה: ${url}\n`;
+    // Compose line: index, title, artist, price and purchase link
+    reply += `${idx + 1}. "${art.title}" by ${art.artist}. Price: ${priceInfo} USD. Purchase: ${url}\n`;
   });
+  // Append coupon instructions and shipping/CoA details
   if (discount) {
-    reply += `\nמשתמשים בקוד הקופון ${discount.code} בקופה לקבלת ${discount.percent}% הנחה. המשלוח המהיר לבית בארה"ב ותעודת האותנטיות כבר כלולים.\n`;
+    reply += `\nUse coupon code ${discount.code} at checkout to get ${discount.percent}% off. Fast shipping to your home in the US and a certificate of authenticity are already included.\n`;
   } else {
-    reply += '\nהמחירים כוללים משלוח מהיר חינם לארה"ב ותעודת אותנטיות. אם תרצה/י הנחה או מידע נוסף, אשמח לעזור.\n';
+    reply += '\nPrices include free fast shipping to the US and a certificate of authenticity. If you would like a discount or more information, feel free to ask.\n';
   }
   return reply;
 }
