@@ -112,42 +112,92 @@ function buildCheckoutUrl(slug, couponCode) {
 }
 
 /**
- * Assemble a textual response summarising artwork suggestions along with
- * pricing information and coupon instructions.  This function is used by
- * the chat endpoint to format the JSON reply for the client.
+ * Assemble a persuasive response summarising artwork suggestions along with
+ * pricing information, optional discount and a clear call to action.  This
+ * function is used by the chat endpoint to format the JSON reply for the
+ * client during the recommendation phase.  Each item includes a Buy Now
+ * link generated from buildCheckoutUrl().
  *
  * @param {Array<Object>} results   List of artwork records.
  * @param {Object|null} discount    Discount information returned by decideCoupon.
  * @returns {string}                 Human‑readable response in English.
  */
-function assembleReply(results, discount) {
-  let reply = '';
-  // If no results, apologise in English
+function assembleSellingReply(results, discount) {
+  // If no results, apologise gracefully
   if (!results.length) {
-    return "Sorry, I couldn't find suitable artworks at this time.";
+    return "I'm sorry, I couldn't find suitable artworks at this time.";
   }
-  // Introductory sentence in English
-  reply += 'Here are some recommended artworks for you:\n';
+  let reply = 'Here are some curated recommendations for you:\n';
   results.forEach((art, idx) => {
     const price = Number(art.price || 0);
     let finalPrice = price;
-    // Apply discount if present
     if (discount) {
       finalPrice = Math.round(price * (100 - discount.percent)) / 100;
     }
-    // Price description: show final price and mention original price when a discount is applied
-    const priceInfo = discount ? `${finalPrice} (instead of ${price})` : `${price}`;
     const url = buildCheckoutUrl(art.slug, discount?.code);
-    // Compose line: index, title, artist, price and purchase link
-    reply += `${idx + 1}. "${art.title}" by ${art.artist}. Price: ${priceInfo} USD. Purchase: ${url}\n`;
+    const priceInfo = discount ? `$${finalPrice} (instead of $${price})` : `$${price}`;
+    // short_spec may be empty; show only if available
+    const spec = art.short_spec ? `${art.short_spec}.` : '';
+    reply += `${idx + 1}. "${art.title}" by ${art.artist}. ${spec} Price: ${priceInfo}. Buy: ${url}\n`;
   });
-  // Append coupon instructions and shipping/CoA details
+  // Mention free shipping and certificate of authenticity
+  reply += '\nPrices include free fast shipping to the US and a certificate of authenticity.';
   if (discount) {
-    reply += `\nUse coupon code ${discount.code} at checkout to get ${discount.percent}% off. Fast shipping to your home in the US and a certificate of authenticity are already included.\n`;
-  } else {
-    reply += '\nPrices include free fast shipping to the US and a certificate of authenticity. If you would like a discount or more information, feel free to ask.\n';
+    reply += ` As a courtesy, I've applied a ${discount.percent}% discount above.`;
   }
+  reply += '\nWould you like me to reserve one of these pieces for you today?';
   return reply;
+}
+
+/**
+ * Extract conversation state from the provided history.  This helper scans
+ * prior user and assistant messages to determine whether the assistant has
+ * already asked for or received information about the room, style and
+ * budget, whether recommendations have been presented, whether the
+ * October 7 story and donation to IDF have been mentioned, and whether
+ * a discount has been offered.  It does not attempt to capture exact
+ * values; only presence/absence is tracked.
+ *
+ * @param {Array<Object>} history   The conversation history as an array of
+ *                                  messages with roles 'user' and 'assistant'.
+ * @returns {Object}                The extracted state.
+ */
+function extractState(history) {
+  let room = false;
+  let style = false;
+  let budget = false;
+  let recommended = false;
+  let storyTold = false;
+  let discountOffered = false;
+  // track if discount offered via code in assistant message (percent off)
+  history.forEach(msg => {
+    const text = String(msg.content || '').toLowerCase();
+    if (msg.role === 'assistant') {
+      if (/here are some curated|refined pick|recommended artworks|curated recommendations/i.test(text)) {
+        recommended = true;
+      }
+      if (/october 7|7 october|idf|soldiers|donation/i.test(text)) {
+        storyTold = true;
+      }
+      if (/\d+%/i.test(text) && /discount|off/.test(text)) {
+        discountOffered = true;
+      }
+    } else if (msg.role === 'user') {
+      // detect room names
+      if (!room && /(living room|bedroom|office|kitchen|dining|study|foyer)/i.test(text)) {
+        room = true;
+      }
+      // detect style keywords
+      if (!style && /(abstract|minimal|minimalist|modern|contemporary|bold|colorful|monochrom|industrial|classic)/i.test(text)) {
+        style = true;
+      }
+      // detect budget or price numbers; any mention of budget/cost counts
+      if (!budget && (/\$\s*\d+/.test(text) || /\d+\s*usd/.test(text) || /(budget|price|cost|how much)/i.test(text))) {
+        budget = true;
+      }
+    }
+  });
+  return { room, style, budget, recommended, storyTold, discountOffered };
 }
 
 // Create and configure the HTTP server.  CORS headers are set for allowed
@@ -187,9 +237,52 @@ const server = http.createServer((req, res) => {
       try {
         const data = JSON.parse(body || '{}');
         const message = data.message || '';
-        const results = searchArtworks(message, 3);
-        const discount = decideCoupon(message);
-        const reply = assembleReply(results, discount);
+        // History may be provided by the client to maintain context.  It should
+        // be an array of { role, content } objects representing prior turns.
+        const history = Array.isArray(data.history) ? data.history.slice() : [];
+        // Append the current user message to the conversation for state analysis.
+        const combined = history.concat([{ role: 'user', content: message }]);
+        const state = extractState(combined);
+
+        let reply;
+
+        // Determine the next step based on what information has been gathered.
+        if (!state.room) {
+          reply = "To help me curate the perfect piece, could you tell me which room you’re styling? For example: living room, bedroom, office, kitchen, or study.";
+        } else if (!state.style) {
+          reply = "What style of art speaks to you? Some clients prefer abstract, minimalist, bold or classic pieces."
+            + " Let me know your taste so I can tailor my suggestions.";
+        } else if (!state.budget) {
+          reply = "Do you have a comfortable budget range in mind? That will help me refine recommendations to fit within it.";
+        } else if (!state.recommended) {
+          // Offer recommendations once room, style and budget have been discussed.
+          // Provide up to three pieces that match the current query.  If a discount
+          // has not yet been offered and the message indicates price sensitivity,
+          // decideCoupon will return a code.  Otherwise discount is null.
+          const discount = state.discountOffered ? null : decideCoupon(message);
+          const results = searchArtworks(message, 3);
+          reply = assembleSellingReply(results, discount);
+        } else if (!state.storyTold) {
+          // After recommending artworks, share the gallery’s story and purpose.
+          reply = "By the way, after the tragic events of October 7, our gallery had to pause operations for nearly two years. "
+            + "Today, every artwork purchased not only supports Israeli artists but also contributes to a donation we make to IDF soldiers. "
+            + "It’s art with both beauty and purpose. Let me know which piece resonates most with you.";
+        } else {
+          // In later turns, check if the user’s latest message shows price hesitation
+          // and offer a discount if one hasn’t been applied yet.  Otherwise keep
+          // the conversation open and invite them to decide.
+          let discount = null;
+          if (!state.discountOffered) {
+            discount = decideCoupon(message);
+          }
+          if (discount) {
+            const results = searchArtworks(message, 3);
+            reply = assembleSellingReply(results, discount);
+          } else {
+            reply = "Is there anything else I can help you with regarding these pieces? I’d be delighted to reserve one of them for you.";
+          }
+        }
+
         res.writeHead(200, { 'Content-Type': 'application/json' });
         res.end(JSON.stringify({ reply }));
       } catch (err) {
