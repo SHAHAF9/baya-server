@@ -1,0 +1,11 @@
+[
+  {
+    "art_id": "green-panther",
+    "title": "Green Panther",
+    "artist": "Gala",
+    "Price": 2500,
+    "slug": "green-panther",
+    "main_image": "https://example.com/green-panther.jpg",
+    "short_spec": "43x51 in, mixed media on canvas"
+  }
+]

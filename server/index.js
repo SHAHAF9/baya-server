@@ -1,14 +1,19 @@
   import http from 'http'
   import fs from 'fs'
   import path from 'path'
+  import fetch from 'node-fetch'
   import { URL } from 'url'
+  import dotenv from 'dotenv'
+
+  dotenv.config()
 
   const __dirname = path.dirname(new URL(import.meta.url).pathname)
   const PORT = process.env.PORT || 3000
-  const OPENAI_API_KEY = process.env.OPENAI_API_KEY || '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'
+  const OPENAI_API_KEY = process.env.OPENAI_API_KEY || ''
   const ALLOWED_ORIGIN = process.env.ALLOWED_ORIGIN || '*'
   const BASE_PRODUCT_URL = process.env.BASE_PRODUCT_URL || 'https://bayagallery.com/artwork/'
   const OPENAI_CHAT_URL = 'https://api.openai.com/v1/chat/completions'
+  const OPENAI_MODELS_URL = 'https://api.openai.com/v1/models'
   const OPENAI_REALTIME_SESSIONS = 'https://api.openai.com/v1/realtime/sessions'
   const CATALOG_PATH = path.join(__dirname, '..', 'baya_catalog.json')
 
@@ -141,7 +146,25 @@ ${JSON.stringify(items.map(function(i){ return { title: i.title, artist: i.artis
     const url = new URL(req.url, 'http://' + req.headers.host)
 
     if (req.method === 'GET' && url.pathname === '/health'){
-      res.writeHead(200, { 'Content-Type': 'text/plain' }); return res.end('ok')
+      const ok = OPENAI_API_KEY ? 'ok' : 'missing_openai_key'
+      res.writeHead(200, { 'Content-Type': 'application/json' })
+      return res.end(JSON.stringify({ status: ok }))
+    }
+
+    if (req.method === 'GET' && url.pathname === '/health/openai'){
+      try{
+        if (!OPENAI_API_KEY) throw new Error('missing_key')
+        const r = await fetch(OPENAI_MODELS_URL, {
+          method: 'GET',
+          headers: { 'Authorization': 'Bearer ' + OPENAI_API_KEY }
+        })
+        const status = r.status
+        res.writeHead(200, { 'Content-Type': 'application/json' })
+        return res.end(JSON.stringify({ reachable: status === 200, status }))
+      }catch(e){
+        res.writeHead(200, { 'Content-Type': 'application/json' })
+        return res.end(JSON.stringify({ reachable: false }))
+      }
     }
 
     if (req.method === 'POST' && url.pathname === '/api/realtime/session'){
