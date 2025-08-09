@@ -5,7 +5,7 @@
 
   const __dirname = path.dirname(new URL(import.meta.url).pathname)
   const PORT = process.env.PORT || 3000
-  const OPENAI_API_KEY = process.env.OPENAI_API_KEY || ''
+  const OPENAI_API_KEY = process.env.OPENAI_API_KEY || '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'
   const ALLOWED_ORIGIN = process.env.ALLOWED_ORIGIN || '*'
   const BASE_PRODUCT_URL = process.env.BASE_PRODUCT_URL || 'https://bayagallery.com/artwork/'
   const OPENAI_CHAT_URL = 'https://api.openai.com/v1/chat/completions'
