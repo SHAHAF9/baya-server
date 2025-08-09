@@ -6,7 +6,7 @@
     "Price": 2500,
     "slug": "green-panther",
     "main_image": "https://example.com/green-panther.jpg",
-    "short_spec": "43x51 in \u2022 Mixed Media on Canvas"
+    "short_spec": "43x51 in, mixed media on canvas"
   },
   {
     "art_id": "majestic-strength",
@@ -15,6 +15,6 @@
     "Price": 2500,
     "slug": "majestic-strength",
     "main_image": "https://example.com/majestic-strength.jpg",
-    "short_spec": "39.4x51.2 in \u2022 Mixed Media on Canvas"
+    "short_spec": "39.4x51.2 in, mixed media on canvas"
   }
 ]
