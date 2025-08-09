@@ -1,8 +1,0 @@
-{
-  "name": "baya-agent",
-  "version": "1.5.1",
-  "type": "module",
-  "scripts": {
-    "start": "node server/index.js"
-  }
-}
